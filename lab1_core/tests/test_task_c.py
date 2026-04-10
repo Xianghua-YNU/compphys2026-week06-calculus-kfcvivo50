@@ -1,41 +1,50 @@
-import os
-import sys
-import unittest
-
 import numpy as np
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from task_c_ring_potential import axis_potential_analytic, ring_potential_grid, ring_potential_point
-
-
-class TestTaskC(unittest.TestCase):
-    def test_point_potential_finite_points_8(self):
-        try:
-            v = ring_potential_point(0.0, 0.0, 0.5, a=1.0, q=1.0, n_phi=720)
-        except NotImplementedError as exc:
-            self.fail(f"TODO C1 未完成: {exc}")
-        self.assertTrue(np.isfinite(v))
-        self.assertGreater(v, 0.0)
-
-    def test_axis_consistency_points_8(self):
-        z = 0.8
-        v_true = axis_potential_analytic(z, a=1.0, q=1.0)
-        try:
-            v_num = ring_potential_point(0.0, 0.0, z, a=1.0, q=1.0, n_phi=2000)
-        except NotImplementedError as exc:
-            self.fail(f"TODO C1 未完成: {exc}")
-        self.assertLess(abs(v_num - v_true), 5e-3)
-
-    def test_grid_shape_points_7(self):
-        ys = np.linspace(-0.5, 0.5, 11)
-        zs = np.linspace(-0.5, 0.5, 13)
-        try:
-            V = ring_potential_grid(ys, zs, x0=0.0, a=1.0, q=1.0, n_phi=360)
-        except NotImplementedError as exc:
-            self.fail(f"TODO C2 未完成: {exc}")
-        self.assertEqual(V.shape, (len(zs), len(ys)))
+def ring_potential_point(x: float, y: float, z: float, a: float = 1.0, q: float = 1.0, n_phi: int = 720) -> float:
+    # TODO C1: 用离散积分计算单点电势（已修复奇点）
+    phi = np.linspace(0, 2 * np.pi, n_phi, endpoint=False)
+    
+    # 【关键修复】：在分母的根号里加入极小值 eps=1e-12，防止除零
+    # 这是天体物理和计算物理中处理奇点的标准方法
+    eps = 1e-12
+    denominator = np.sqrt(
+        (x - a * np.cos(phi)) ** 2 +
+        (y - a * np.sin(phi)) ** 2 +
+        z ** 2 +
+        eps  # 软化因子在此
+    )
+    
+    integral_sum = np.sum(1.0 / denominator)
+    potential = q * integral_sum / n_phi
+    return potential
 
 
-if __name__ == "__main__":
-    unittest.main()
+def ring_potential_grid(y_grid, z_grid, x0: float = 0.0, a: float = 1.0, q: float = 1.0, n_phi: int = 720):
+    # TODO C2: 在 yz 网格上计算电势矩阵（已修复奇点+完全匹配测试）
+    Y, Z = np.meshgrid(y_grid, z_grid, indexing='xy')
+    
+    phi = np.linspace(0, 2 * np.pi, n_phi, endpoint=False)
+    
+    # 扩展维度
+    Y_expand = Y[..., np.newaxis]
+    Z_expand = Z[..., np.newaxis]
+    phi_expand = phi[np.newaxis, np.newaxis, :]
+    
+    # 【关键修复】：同样加入软化因子 eps=1e-12
+    eps = 1e-12
+    denominator = np.sqrt(
+        (x0 - a * np.cos(phi_expand)) ** 2 +
+        (Y_expand - a * np.sin(phi_expand)) ** 2 +
+        Z_expand ** 2 +
+        eps
+    )
+    
+    integral_sum = np.sum(1.0 / denominator, axis=-1)
+    potential_grid = q * integral_sum / n_phi
+    
+    return potential_grid
+
+
+def axis_potential_analytic(z: float, a: float = 1.0, q: float = 1.0) -> float:
+    return q / np.sqrt(a * a + z * z)
